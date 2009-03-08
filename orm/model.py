@@ -14,14 +14,16 @@ class Column(object):
     def __get__(self, obj, typ=None):
         if obj is None:
             return self
-        obj._orm_load()
-        return getattr(obj, obj._orm_attrs[self.name])
+        if self.primary:
+            return None
+        return obj._orm_load_column(self)
 
 
 class ModelMeta(type):
     def __new__(cls, name, bases, dct):
         dct['_orm_attrs'] = {}
         dct['_orm_columns'] = {}
+        dct['_orm_pk_attr'] = None
         for k in dct:
             v = dct[k]
             if isinstance(v, Column):
@@ -31,11 +33,15 @@ class ModelMeta(type):
                 dct['_orm_columns'][k] = v.name
                 if v.primary:
                     dct['_orm_pk_attr'] = k
-        if '_orm_pk_attr' not in dct:
-            dct['_orm_pk_attr'] = '_orm_pk'
-            dct['_orm_pk'] = Column(name='oid')
-            dct['_orm_attrs']['oid'] = '_orm_pk'
-            dct['_orm_columns']['_orm_pk'] = 'oid'
+        if dct['_orm_pk_attr'] is None:
+            if 'oid' in dct['_orm_attrs']:
+                dct['_orm_pk_attr'] = dct['_orm_attrs']['oid']
+                dct[dct['_orm_pk_attr']].primary = True
+            else:
+                dct['_orm_pk_attr'] = '_orm_pk'
+                dct['_orm_pk'] = Column(name='oid')
+                dct['_orm_attrs']['oid'] = '_orm_pk'
+                dct['_orm_columns']['_orm_pk'] = 'oid'
         dct['_orm_dirty_attrs'] = set()
         inst = type.__new__(cls, name, bases, dct)
         _REGISTERED[name] = inst
@@ -64,39 +70,41 @@ class Model(object):
         return locals()
     pk = property(**pk())
     
-    def _orm_load(self):
-        attrs = list(self._orm_columns)
+    def _orm_load_column(self, column):
         if self._orm_new_row:
-            for attr in attrs:
-                setattr(self, attr, None)
-            return
-        columns = [self._orm_columns[attr] for attr in attrs]
+            return None
         q = ('select %s from %s '
-             'where %s=?' % (', '.join(columns),
-                             self._orm_table,
+             'where %s=?' % (column.name, self._orm_table,
                              self._orm_columns[self._orm_pk_attr]))
-        args = (self.pk,)
-        row = connection.cursor().execute(q, args).fetchone()
-        if row is None:
-            self._orm_new_row = True
-            return self._orm_load()
-        for attr, value in zip(attrs, row):
-            converter = getattr(type(self), attr).converter
-            if converter is not None:
-                value = converter(value)
-            super(Model, self).__setattr__(attr, value)
-        self._orm_dirty_attrs.clear()
+        args = (getattr(self, self._orm_pk_attr),)
+        value = connection.cursor().execute(q, args).fetchone()[0]
+        if column.converter is not None:
+            value = column.converter(value)
+        attr = self._orm_attrs[column.name]
+        self._orm_setattr(attr, value)
+        self._orm_dirty_attrs.discard(attr)
+        return value
+    
+    def _orm_setattr(self, attr, value):
+        return super(Model, self).__setattr__(attr, value)
+    
+    def reload(self):
+        for attr in self._orm_columns:
+            if attr == self._orm_pk_attr:
+                continue
+            delattr(self, attr)
     
     def delete(self):
         if self._orm_new_row:
             return
         q = 'delete from %s where %s=?' % (self._orm_table,
                                            self._orm_columns[self._orm_pk_attr])
-        args = (self.pk,)
+        args = (getattr(self, self._orm_pk_attr),)
         connection.cursor().execute(q, args)
         self._orm_new_row = True
         self._orm_dirty_attrs.update(self._orm_columns)
-        setattr(self, self._orm_pk_attr, None)
+        self._orm_dirty_attrs.remove(self._orm_pk_attr)
+        delattr(self, self._orm_pk_attr)
     
     def save(self):
         attrs = list(self._orm_dirty_attrs)
@@ -124,7 +132,7 @@ class Model(object):
                     args.append(self._orm_old_pk)
                     del self._orm_old_pk
                 else:
-                    args.append(self.pk)
+                    args.append(getattr(self, self._orm_pk_attr))
         elif self._orm_new_row:
             q = 'insert into %s default values' % (self._orm_table,)
             args = ()
@@ -134,6 +142,5 @@ class Model(object):
         cursor.execute(q, args)
         if self._orm_new_row:
             self._orm_new_row = False
-            super(Model, self).__setattr__(self._orm_pk_attr,
-                                           cursor.lastrowid)
+            self._orm_setattr(self._orm_pk_attr, cursor.lastrowid)
         self._orm_dirty_attrs.clear()

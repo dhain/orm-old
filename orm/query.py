@@ -83,6 +83,15 @@ class Expr(object):
         return ' '.join(all_exprs), all_args
 
 
+class Group(Expr):
+    def __init__(self, *args):
+        self.args = args
+    
+    def sql(self):
+        expr, args = super(Group, self).sql()
+        return '(%s)' % (expr,), args
+
+
 class Sql(Expr):
     def __init__(self, value):
         self.value = value

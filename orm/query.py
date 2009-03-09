@@ -1,10 +1,3 @@
-class Sql(object):
-    def __init__(self, value):
-        self.value = value
-    
-    def sql(self):
-        return self.value, ()
-
 class Expr(object):
     def __init__(self, *args):
         self.args = args
@@ -17,7 +10,7 @@ class Expr(object):
     
     def __eq__(self, other):
         if other is None:
-            return Expr(self, Sql(' isnull'))
+            return Expr(self, Sql('isnull'))
         return Expr(self, Sql('='), other)
     
     def __gt__(self, other):
@@ -28,14 +21,14 @@ class Expr(object):
     
     def __ne__(self, other):
         if other is None:
-            return Expr(self, Sql(' notnull'))
+            return Expr(self, Sql('notnull'))
         return Expr(self, Sql('!='), other)
     
     def __and__(self, other):
-        return Expr(self, Sql(' and '), other)
+        return Expr(self, Sql('and'), other)
     
     def __or__(self, other):
-        return Expr(self, Sql(' or '), other)
+        return Expr(self, Sql('or'), other)
     
     def __add__(self, other):
         return Expr(self, Sql('+'), other)
@@ -53,7 +46,7 @@ class Expr(object):
         return Expr(self, Sql('%'), other)
     
     def __invert__(self):
-        return Expr(Sql('not '), self)
+        return Expr(Sql('not'), self)
     
     def __pos__(self):
         return Expr(Sql('+'), self)
@@ -61,39 +54,57 @@ class Expr(object):
     def __neg__(self):
         return Expr(Sql('-'), self)
     
-    def __contains__(self, other):
-        return Expr(other, Sql(' in '), self)
+    def is_in(self, other):
+        return Expr(self, Sql('in'), other)
     
     def like(self, other):
-        return Expr(self, Sql(' like '), other)
+        return Expr(self, Sql('like'), other)
     
     def glob(self, other):
-        return Expr(self, Sql(' glob '), other)
+        return Expr(self, Sql('glob'), other)
     
     def match(self, other):
-        return Expr(self, Sql(' match '), other)
+        return Expr(self, Sql('match'), other)
     
     def regexp(self, other):
-        return Expr(self, Sql(' regexp '), other)
+        return Expr(self, Sql('regexp'), other)
     
     def sql(self):
-        expr = ''
-        args = []
+        all_exprs = []
+        all_args = []
         for part in self.args:
             if hasattr(part, 'sql'):
-                part_expr, part_args = part.sql()
-                expr += part_expr
-                args.extend(part_args)
+                expr, args = part.sql()
+                all_exprs.append(expr)
+                all_args.extend(args)
             else:
-                expr += '?'
-                args.append(part)
-        if len(self.args) > 1:
-            expr = '(%s)' % (expr,)
-        return expr, args
+                all_exprs.append('?')
+                all_args.append(part)
+        return ' '.join(all_exprs), all_args
+
+
+class Sql(Expr):
+    def __init__(self, value):
+        self.value = value
     
-    def __repr__(self):
-        return '%s(%s)' % (type(self).__name__,
-                           ', '.join(repr(a) for a in self.args))
+    def sql(self):
+        return self.value, ()
+
+
+class ExprList(Expr):
+    def __init__(self, args):
+        self.args = args
+    
+    def sql(self):
+        all_exprs = []
+        all_args = []
+        for arg in self.args:
+            if not hasattr(arg, 'sql'):
+                arg = Expr(arg)
+            expr, args = arg.sql()
+            all_exprs.append(expr)
+            all_args.extend(args)
+        return ', '.join(all_exprs), all_args
 
 
 class Where(object):
@@ -106,3 +117,22 @@ class Where(object):
     def sql(self):
         expr, args = self.expr.sql()
         return 'where %s' % (expr,), args
+
+
+class Select(Expr):
+    def __init__(self, exprs=(Sql('*'),), sources=None, where=None):
+        self.exprs = exprs
+        self.sources = sources
+        self.where = where
+    
+    @property
+    def args(self):
+        args = [Sql('select'), ExprList(self.exprs)]
+        if self.sources is not None:
+            args.extend([Sql('from'), ExprList(self.sources)])
+        if self.where is not None:
+            args.append(self.where)
+        return args
+
+
+

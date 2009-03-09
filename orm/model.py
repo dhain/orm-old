@@ -1,10 +1,11 @@
 from orm import connection
+from orm.query import Expr
 
 
 _REGISTERED = {}
 
 
-class Column(object):
+class Column(Expr):
     def __init__(self, name=None, primary=False, converter=None, adapter=None):
         self.name = name
         self.primary = primary
@@ -17,6 +18,15 @@ class Column(object):
         if self.primary:
             return None
         return obj._orm_load_column(self)
+    
+    def sql(self):
+        if hasattr(self, 'table'):
+            return ('"%s"."%s"' % (self.table, self.name), ())
+        else:
+            return ('"%s"' % (self.name,), ())
+    
+    def __repr__(self):
+        return super(Expr, self).__repr__()
 
 
 class ModelMeta(type):
@@ -27,6 +37,7 @@ class ModelMeta(type):
         for k in dct:
             v = dct[k]
             if isinstance(v, Column):
+                v.table = dct['_orm_table']
                 if v.name is None:
                     v.name = k
                 dct['_orm_attrs'][v.name] = k

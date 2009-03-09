@@ -24,9 +24,6 @@ class Column(Expr):
             return ('"%s"."%s"' % (self.table, self.name), ())
         else:
             return ('"%s"' % (self.name,), ())
-    
-    def __repr__(self):
-        return super(Expr, self).__repr__()
 
 
 class Model(object):

@@ -1,5 +1,5 @@
 from orm import connection
-from orm.query import Expr
+from orm.query import Expr, Select, Where, Sql
 
 
 _REGISTERED = {}
@@ -43,14 +43,13 @@ class Model(object):
                     if v.primary:
                         dct['_orm_pk_attr'] = k
             if dct['_orm_pk_attr'] is None:
-                if 'oid' in dct['_orm_attrs']:
-                    dct['_orm_pk_attr'] = dct['_orm_attrs']['oid']
-                    dct[dct['_orm_pk_attr']].primary = True
-                else:
-                    dct['_orm_pk_attr'] = '_orm_pk'
-                    dct['_orm_pk'] = Column(name='oid')
-                    dct['_orm_attrs']['oid'] = '_orm_pk'
-                    dct['_orm_columns']['_orm_pk'] = 'oid'
+                dct['pk'] = Column(name='oid', primary=True)
+                if '_orm_table' in dct:
+                    dct['pk'].table = dct['_orm_table']
+                dct['_orm_pk_attr'] = dct['_orm_attrs']['oid'] = 'pk'
+                dct['_orm_columns']['pk'] = 'oid'
+            elif 'pk' not in dct:
+                dct['pk'] = dct[dct['_orm_pk_attr']]
             dct['_orm_dirty_attrs'] = set()
             inst = type.__new__(cls, name, bases, dct)
             _REGISTERED[name] = inst
@@ -64,16 +63,6 @@ class Model(object):
                 self._orm_old_pk = self.pk
             self._orm_dirty_attrs.add(name)
         super(Model, self).__setattr__(name, value)
-    
-    def pk():
-        def fset(self, value):
-            setattr(self, self._orm_pk_attr, value)
-        
-        def fget(self):
-            return getattr(self, self._orm_pk_attr)
-        
-        return locals()
-    pk = property(**pk())
     
     def _orm_load_column(self, column):
         if self._orm_new_row:
@@ -92,6 +81,10 @@ class Model(object):
     
     def _orm_setattr(self, attr, value):
         return super(Model, self).__setattr__(attr, value)
+    
+    @classmethod
+    def find(cls, *where):
+        return Select(sources=[Sql(cls._orm_table)], where=Where(*where))
     
     def reload(self):
         for attr in self._orm_columns:

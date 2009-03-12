@@ -19,11 +19,12 @@ class Column(Expr):
             return None
         return obj._orm_load_column(self)
     
-    def sql(self):
+    def sql(self, parenthesize=False):
         if hasattr(self, 'table'):
-            return ('"%s"."%s"' % (self.table, self.name), ())
+            expr = '"%s"."%s"' % (self.table, self.name)
         else:
-            return ('"%s"' % (self.name,), ())
+            expr = '"%s"' % (self.name,)
+        return expr, ()
 
 
 class Model(object):

@@ -69,34 +69,28 @@ class Expr(object):
     def regexp(self, other):
         return Expr(self, Sql('regexp'), other)
     
-    def sql(self):
+    def sql(self, parenthesize=False):
         all_exprs = []
         all_args = []
         for part in self.args:
             if hasattr(part, 'sql'):
-                expr, args = part.sql()
+                expr, args = part.sql(True)
                 all_exprs.append(expr)
                 all_args.extend(args)
             else:
                 all_exprs.append('?')
                 all_args.append(part)
-        return ' '.join(all_exprs), all_args
-
-
-class Group(Expr):
-    def __init__(self, *args):
-        self.args = args
-    
-    def sql(self):
-        expr, args = super(Group, self).sql()
-        return '(%s)' % (expr,), args
+        expr = ' '.join(all_exprs)
+        if parenthesize and len(all_exprs) > 1:
+            expr = '(%s)' % (expr,)
+        return expr, all_args
 
 
 class Sql(Expr):
     def __init__(self, value):
         self.value = value
     
-    def sql(self):
+    def sql(self, parenthesize=False):
         return self.value, ()
 
 
@@ -104,16 +98,19 @@ class ExprList(Expr):
     def __init__(self, args):
         self.args = args
     
-    def sql(self):
+    def sql(self, parenthesize=False):
         all_exprs = []
         all_args = []
         for arg in self.args:
             if not hasattr(arg, 'sql'):
                 arg = Expr(arg)
-            expr, args = arg.sql()
+            expr, args = arg.sql(True)
             all_exprs.append(expr)
             all_args.extend(args)
-        return ', '.join(all_exprs), all_args
+        expr = ', '.join(all_exprs)
+        if parenthesize and len(all_exprs) > 1:
+            expr = '(%s)' % (expr,)
+        return expr, all_args
 
 
 class Where(object):
@@ -123,8 +120,8 @@ class Where(object):
         else:
             self.expr = reduce(lambda e1, e2: e1 & e2, ands, expr)
     
-    def sql(self):
-        expr, args = self.expr.sql()
+    def sql(self, parenthesize=False):
+        expr, args = self.expr.sql(True)
         return 'where %s' % (expr,), args
 
 

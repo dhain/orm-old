@@ -141,4 +141,48 @@ class Select(Expr):
         return args
 
 
+class Delete(Expr):
+    def __init__(self, sources, where=None):
+        self.sources = sources
+        self.where = where
+    
+    @property
+    def args(self):
+        args = [Sql('delete from'), ExprList(self.sources)]
+        if self.where is not None:
+            args.append(self.where)
+        return args
+
+
+class Insert(Expr):
+    def __init__(self, table, values=None):
+        self.table = table
+        self.values = values
+    
+    @property
+    def args(self):
+        args = [Sql('insert into'), Sql(self.table)]
+        if self.values:
+            args.extend([ExprList(self.values.keys()), Sql('values'),
+                         ExprList(self.values.values())])
+        else:
+            args.append(Sql('default values'))
+        return args
+
+
+class Update(Expr):
+    def __init__(self, table, values, where=None):
+        self.table = table
+        self.values = values
+        self.where = where
+    
+    @property
+    def args(self):
+        args = [Sql('update'), Sql(self.table), Sql('set'),
+                ExprList([Expr(column, Sql('='), value)
+                          for column, value in self.values.iteritems()])]
+        if self.where is not None:
+            args.append(self.where)
+        return args
+
 

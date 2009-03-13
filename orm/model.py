@@ -1,5 +1,5 @@
 from orm import connection
-from orm.query import Expr, Select, Where, Sql
+from orm.query import Expr, Select, Insert, Update, Delete, Where, Sql
 
 
 _REGISTERED = {}
@@ -65,13 +65,24 @@ class Model(object):
             self._orm_dirty_attrs.add(name)
         super(Model, self).__setattr__(name, value)
     
+    def _orm_setattr(self, attr, value):
+        return super(Model, self).__setattr__(attr, value)
+    
+    def _orm_where_pk(self, old=False):
+        pk = self._orm_old_pk if old else getattr(self, self._orm_pk_attr)
+        return Where(self._orm_columns[self._orm_pk_attr] == pk)
+    
+    def _orm_adapt_attr(self, attr):
+        adapter = getattr(type(self), attr).adapter
+        value = getattr(self, attr)
+        if adapter is not None:
+            value = adapter(value)
+        return value
+    
     def _orm_load_column(self, column):
         if self._orm_new_row:
             return None
-        q = ('select %s from %s '
-             'where %s=?' % (column.name, self._orm_table,
-                             self._orm_columns[self._orm_pk_attr]))
-        args = (getattr(self, self._orm_pk_attr),)
+        q, args = Select([column], [self._orm_table], self._orm_where_pk()).sql()
         value = connection.cursor().execute(q, args).fetchone()[0]
         if column.converter is not None:
             value = column.converter(value)
@@ -79,9 +90,6 @@ class Model(object):
         self._orm_setattr(attr, value)
         self._orm_dirty_attrs.discard(attr)
         return value
-    
-    def _orm_setattr(self, attr, value):
-        return super(Model, self).__setattr__(attr, value)
     
     @classmethod
     def find(cls, *where):
@@ -96,9 +104,7 @@ class Model(object):
     def delete(self):
         if self._orm_new_row:
             return
-        q = 'delete from %s where %s=?' % (self._orm_table,
-                                           self._orm_columns[self._orm_pk_attr])
-        args = (getattr(self, self._orm_pk_attr),)
+        q, args = Delete([self._orm_table], self._orm_where_pk()).sql()
         connection.cursor().execute(q, args)
         self._orm_new_row = True
         self._orm_dirty_attrs.update(self._orm_columns)
@@ -106,37 +112,19 @@ class Model(object):
         delattr(self, self._orm_pk_attr)
     
     def save(self):
-        attrs = list(self._orm_dirty_attrs)
-        if attrs:
-            columns = []
-            args = []
-            for attr in attrs:
-                columns.append(self._orm_columns[attr])
-                adapter = getattr(type(self), attr).adapter
-                value = getattr(self, attr)
-                if adapter is not None:
-                    value = adapter(value)
-                args.append(value)
-            if self._orm_new_row:
-                q = ('insert into %s '
-                     '(%s) values (%s)' % (self._orm_table,
-                                           ', '.join(columns),
-                                           ', '.join('?' * len(columns))))
-            else:
-                q = ('update %s '
-                     'set %s where %s=?' % (self._orm_table,
-                                            ', '.join(c+'=?' for c in columns),
-                                            self._orm_columns[self._orm_pk_attr]))
-                if self._orm_pk_attr in self._orm_dirty_attrs:
-                    args.append(self._orm_old_pk)
-                    del self._orm_old_pk
-                else:
-                    args.append(getattr(self, self._orm_pk_attr))
-        elif self._orm_new_row:
-            q = 'insert into %s default values' % (self._orm_table,)
-            args = ()
-        else:
+        if not self._orm_dirty_attrs and not self._orm_new_row:
             return
+        values = dict((self._orm_columns[attr], self._orm_adapt_attr[attr])
+                      for attr in self._orm_dirty_attrs)
+        if self._orm_new_row:
+            q, args = Insert(self._orm_table, values).sql()
+        else:
+            if self._orm_pk_attr in self._orm_dirty_attrs:
+                where = self._orm_where_pk(True)
+                del self._orm_old_pk
+            else:
+                where = self._orm_where_pk()
+            q, args = Update(self._orm_table, values, where).sql()
         cursor = connection.cursor()
         cursor.execute(q, args)
         if self._orm_new_row:

@@ -12,7 +12,7 @@ class Column(Expr):
         self.converter = converter
         self.adapter = adapter
     
-    def __get__(self, obj, typ=None):
+    def __get__(self, obj, cls):
         if obj is None:
             return self
         if self.primary:
@@ -30,6 +30,8 @@ class Column(Expr):
 class Model(object):
     class __metaclass__(type):
         def __new__(cls, name, bases, dct):
+            if bases == (object,):
+                return type.__new__(cls, name, bases, dct)
             dct['_orm_attrs'] = {}
             dct['_orm_columns'] = {}
             dct['_orm_pk_attr'] = None
@@ -45,16 +47,21 @@ class Model(object):
                         dct['_orm_pk_attr'] = k
             if dct['_orm_pk_attr'] is None:
                 dct['pk'] = Column(name='oid', primary=True)
-                if '_orm_table' in dct:
-                    dct['pk'].table = dct['_orm_table']
+                dct['pk'].table = dct['_orm_table']
                 dct['_orm_pk_attr'] = dct['_orm_attrs']['oid'] = 'pk'
                 dct['_orm_columns']['pk'] = 'oid'
-            elif 'pk' not in dct:
-                dct['pk'] = dct[dct['_orm_pk_attr']]
             dct['_orm_dirty_attrs'] = set()
             inst = type.__new__(cls, name, bases, dct)
             _REGISTERED[name] = inst
             return inst
+    
+    class pk(object):
+        def __get__(self, obj, cls):
+            if obj is None:
+                return getattr(cls, cls._orm_pk_attr)
+            else:
+                return getattr(obj, obj._orm_pk_attr)
+    pk = pk()
     
     _orm_new_row = True
     
@@ -70,7 +77,7 @@ class Model(object):
     
     def _orm_where_pk(self, old=False):
         pk = self._orm_old_pk if old else getattr(self, self._orm_pk_attr)
-        return Where(self._orm_columns[self._orm_pk_attr] == pk)
+        return Where(getattr(type(self), self._orm_pk_attr) == pk)
     
     def _orm_adapt_attr(self, attr):
         adapter = getattr(type(self), attr).adapter
@@ -82,7 +89,7 @@ class Model(object):
     def _orm_load_column(self, column):
         if self._orm_new_row:
             return None
-        q, args = Select([column], [self._orm_table], self._orm_where_pk()).sql()
+        q, args = Select([column], [Sql(self._orm_table)], self._orm_where_pk()).sql()
         value = connection.cursor().execute(q, args).fetchone()[0]
         if column.converter is not None:
             value = column.converter(value)
@@ -104,7 +111,7 @@ class Model(object):
     def delete(self):
         if self._orm_new_row:
             return
-        q, args = Delete([self._orm_table], self._orm_where_pk()).sql()
+        q, args = Delete([Sql(self._orm_table)], self._orm_where_pk()).sql()
         connection.cursor().execute(q, args)
         self._orm_new_row = True
         self._orm_dirty_attrs.update(self._orm_columns)
@@ -114,18 +121,19 @@ class Model(object):
     def save(self):
         if not self._orm_dirty_attrs and not self._orm_new_row:
             return
-        values = dict((self._orm_columns[attr], self._orm_adapt_attr[attr])
+        values = dict((getattr(type(self), attr), self._orm_adapt_attr(attr))
                       for attr in self._orm_dirty_attrs)
         if self._orm_new_row:
-            q, args = Insert(self._orm_table, values).sql()
+            q, args = Insert(Sql(self._orm_table), values).sql()
         else:
             if self._orm_pk_attr in self._orm_dirty_attrs:
                 where = self._orm_where_pk(True)
                 del self._orm_old_pk
             else:
                 where = self._orm_where_pk()
-            q, args = Update(self._orm_table, values, where).sql()
+            q, args = Update(Sql(self._orm_table), values, where).sql()
         cursor = connection.cursor()
+        print q, args
         cursor.execute(q, args)
         if self._orm_new_row:
             self._orm_new_row = False

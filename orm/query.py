@@ -161,7 +161,7 @@ class Insert(Expr):
     
     @property
     def args(self):
-        args = [Sql('insert into'), Sql(self.table)]
+        args = [Sql('insert into'), self.table]
         if self.values:
             args.extend([ExprList(self.values.keys()), Sql('values'),
                          ExprList(self.values.values())])
@@ -178,7 +178,7 @@ class Update(Expr):
     
     @property
     def args(self):
-        args = [Sql('update'), Sql(self.table), Sql('set'),
+        args = [Sql('update'), self.table, Sql('set'),
                 ExprList([Expr(column, Sql('='), value)
                           for column, value in self.values.iteritems()])]
         if self.where is not None:

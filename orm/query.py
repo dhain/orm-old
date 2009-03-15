@@ -227,7 +227,7 @@ class Insert(Expr):
     
     def args(self):
         args = []
-        if self.values is not None:
+        if self.values:
             for value in self.values.values():
                 if hasattr(value, 'args'):
                     args.extend(value.args())
@@ -239,17 +239,25 @@ class Insert(Expr):
 class Update(Expr):
     def __init__(self, table, values, where=None):
         self.table = table
-        self.values = ExprList(Eq(col, val) for col, val in values.items())
+        self.values = values
         self.where = where
     
     def sql(self):
-        sql = 'update ' + self.table + ' set ' + self.values.sql()
+        values = [column.name +
+                  (' = ' + value.sql() if hasattr(value, 'sql') else ' = ?')
+                  for column, value in self.values.iteritems()]
+        sql = 'update ' + self.table + ' set ' + ', '.join(values)
         if self.where is not None:
             sql += ' where ' + self.where.sql()
         return sql
     
     def args(self):
-        args = self.values.args()
+        args = []
+        for value in self.values.values():
+            if hasattr(value, 'args'):
+                args.extend(value.args())
+            else:
+                args.append(value)
         if self.where is not None:
             args.extend(self.where.args())
         return args

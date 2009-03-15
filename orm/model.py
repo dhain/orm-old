@@ -1,5 +1,5 @@
 from orm import connection
-from orm.query import Expr, Select, Insert, Update, Delete, Where, Sql
+from orm.query import *
 
 
 _REGISTERED = {}
@@ -19,12 +19,15 @@ class Column(Expr):
             return None
         return obj._orm_load_column(self)
     
-    def sql(self, parenthesize=False):
+    def sql(self):
         if hasattr(self, 'table'):
             expr = '"%s"."%s"' % (self.table, self.name)
         else:
             expr = '"%s"' % (self.name,)
-        return expr, ()
+        return expr
+    
+    def args(self):
+        return []
 
 
 class Model(object):
@@ -58,9 +61,8 @@ class Model(object):
     class pk(object):
         def __get__(self, obj, cls):
             if obj is None:
-                return getattr(cls, cls._orm_pk_attr)
-            else:
-                return getattr(obj, obj._orm_pk_attr)
+                obj = cls
+            return getattr(obj, obj._orm_pk_attr)
     pk = pk()
     
     _orm_new_row = True
@@ -77,7 +79,7 @@ class Model(object):
     
     def _orm_where_pk(self, old=False):
         pk = self._orm_old_pk if old else getattr(self, self._orm_pk_attr)
-        return Where(getattr(type(self), self._orm_pk_attr) == pk)
+        return getattr(type(self), self._orm_pk_attr) == pk
     
     def _orm_adapt_attr(self, attr):
         adapter = getattr(type(self), attr).adapter
@@ -89,8 +91,8 @@ class Model(object):
     def _orm_load_column(self, column):
         if self._orm_new_row:
             return None
-        q, args = Select([column], [Sql(self._orm_table)], self._orm_where_pk()).sql()
-        value = connection.cursor().execute(q, args).fetchone()[0]
+        q = Select(column, Sql(self._orm_table), self._orm_where_pk())
+        value = connection.cursor().execute(q.sql(), q.args()).fetchone()[0]
         if column.converter is not None:
             value = column.converter(value)
         attr = self._orm_attrs[column.name]
@@ -99,8 +101,10 @@ class Model(object):
         return value
     
     @classmethod
-    def find(cls, *where):
-        return Select(sources=[Sql(cls._orm_table)], where=Where(*where))
+    def find(cls, where=None, *ands):
+        if ands:
+            where = reduce(And, ands, where)
+        return Select(sources=Sql(cls._orm_table), where=where)
     
     def reload(self):
         for attr in self._orm_columns:
@@ -111,8 +115,8 @@ class Model(object):
     def delete(self):
         if self._orm_new_row:
             return
-        q, args = Delete([Sql(self._orm_table)], self._orm_where_pk()).sql()
-        connection.cursor().execute(q, args)
+        q = Delete(Sql(self._orm_table), self._orm_where_pk())
+        connection.cursor().execute(q.sql(), q.args())
         self._orm_new_row = True
         self._orm_dirty_attrs.update(self._orm_columns)
         self._orm_dirty_attrs.remove(self._orm_pk_attr)
@@ -124,17 +128,17 @@ class Model(object):
         values = dict((getattr(type(self), attr), self._orm_adapt_attr(attr))
                       for attr in self._orm_dirty_attrs)
         if self._orm_new_row:
-            q, args = Insert(Sql(self._orm_table), values).sql()
+            q = Insert(self._orm_table, values)
         else:
             if self._orm_pk_attr in self._orm_dirty_attrs:
                 where = self._orm_where_pk(True)
                 del self._orm_old_pk
             else:
                 where = self._orm_where_pk()
-            q, args = Update(Sql(self._orm_table), values, where).sql()
+            q = Update(self._orm_table, values, where)
         cursor = connection.cursor()
-        print q, args
-        cursor.execute(q, args)
+        print q.sql(), q.args()
+        cursor.execute(q.sql(), q.args())
         if self._orm_new_row:
             self._orm_new_row = False
             self._orm_setattr(self._orm_pk_attr, cursor.lastrowid)

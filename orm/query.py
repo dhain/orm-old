@@ -1,3 +1,6 @@
+from orm.util import slice2limit
+
+
 class Expr(object):
     def __init__(self, value):
         self.value = value
@@ -168,12 +171,18 @@ class ExprList(list, Expr):
 
 
 class Select(Expr):
-    def __init__(self, what=None, sources=None, where=None):
+    def __init__(self, what=None, sources=None, where=None, slice=None):
         if what is None:
             what = ExprList([Sql('*')])
         self.what = what
         self.sources = sources
         self.where = where
+        self.slice = slice
+    
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            key = slice(key, key + 1)
+        return Select(self.what, self.sources, self.where, key)
     
     def sql(self):
         sql = 'select ' + self.what.sql()
@@ -181,6 +190,10 @@ class Select(Expr):
             sql += ' from ' + self.sources.sql()
         if self.where is not None:
             sql += ' where ' + self.where.sql()
+        if self.slice is not None:
+            slc = slice2limit(self.slice)
+            if slc:
+                sql += ' ' + slc
         return sql
     
     def args(self):

@@ -88,20 +88,6 @@ class Model(object):
             value = adapter(value)
         return value
     
-    def _orm_load(self, row, description):
-        for i, column in enumerate(description):
-            column = column[0]
-            value = row[i]
-            try:
-                attr = self._orm_attrs[column]
-            except KeyError:
-                self._orm_setattr(column, value)
-                return
-            column = getattr(type(self), attr)
-            if column.converter is not None:
-                value = column.converter(value)
-            self._orm_setattr(attr, value)
-    
     def _orm_load_column(self, column):
         if self._orm_new_row:
             return None
@@ -115,26 +101,34 @@ class Model(object):
         return value
     
     @classmethod
+    def _orm_load(cls, row, description):
+        self = cls.__new__(cls)
+        for i, column in enumerate(description):
+            column = column[0]
+            value = row[i]
+            try:
+                attr = self._orm_attrs[column]
+            except KeyError:
+                self._orm_setattr(column, value)
+                return
+            column = getattr(cls, attr)
+            if column.converter is not None:
+                value = column.converter(value)
+            self._orm_setattr(attr, value)
+        return self
+    
+    @classmethod
     def find(cls, where=None, *ands):
         if ands:
             where = reduce(And, ands, where)
-        q = Select(sources=Sql(cls._orm_table), where=where)
-        cursor = connection.cursor()
-        for row in cursor.execute(q.sql(), q.args()):
-            inst = cls.__new__(cls)
-            inst._orm_load(row, cursor.description)
-            yield inst
+        return Select(sources=ModelList([cls]), where=where)
     
     @classmethod
     def get(cls, pk):
-        q = Select(sources=Sql(cls._orm_table), where=(cls.pk == pk))
-        cursor = connection.cursor()
-        row = cursor.execute(q.sql(), q.args()).fetchone()
-        if not row:
-            raise KeyError('no such row')
-        inst = cls.__new__(cls)
-        inst._orm_load(row, cursor.description)
-        return inst
+        try:
+            return Select(sources=ModelList([cls]), where=(cls.pk == pk))[0]
+        except IndexError:
+            raise KeyError(pk, 'no such row')
     
     def reload(self):
         for attr in self._orm_columns:
@@ -167,7 +161,6 @@ class Model(object):
                 where = self._orm_where_pk()
             q = Update(self._orm_table, values, where)
         cursor = connection.cursor()
-        print q.sql(), q.args()
         cursor.execute(q.sql(), q.args())
         if self._orm_new_row:
             self._orm_new_row = False

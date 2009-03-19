@@ -1,3 +1,4 @@
+from orm import connection
 from orm.util import slice2limit
 
 
@@ -170,6 +171,14 @@ class ExprList(list, Expr):
         return args
 
 
+class ModelList(list, Expr):
+    def sql(self):
+        return ', '.join((item._orm_table for item in self))
+    
+    def args(self):
+        return []
+
+
 class Select(Expr):
     def __init__(self, what=None, sources=None, where=None, slice=None):
         if what is None:
@@ -180,9 +189,32 @@ class Select(Expr):
         self.slice = slice
     
     def __getitem__(self, key):
+        s = Select(self.what, self.sources, self.where)
         if isinstance(key, int):
-            key = slice(key, key + 1)
-        return Select(self.what, self.sources, self.where, key)
+            s.slice = slice(key, key + 1)
+            try:
+                return iter(s).next()
+            except StopIteration:
+                raise IndexError(key)
+        s.slice = key
+        return s
+    
+    def __iter__(self):
+        cursor = connection.cursor()
+        result = cursor.execute(self.sql(), self.args())
+        if isinstance(self.sources, ModelList):
+            description = cursor.description
+            for row in result:
+                res = []
+                for model in self.sources:
+                    mdesc = tuple((d[0], i) for i, d in enumerate(description)
+                                  if d[0] in model._orm_attrs)
+                    mrow = tuple(row[d[1]] for d in mdesc)
+                    res.append(model._orm_load(mrow, mdesc))
+                yield tuple(res) if len(res) > 1 else res[0]
+        else:
+            for row in result:
+                yield row
     
     def sql(self):
         sql = 'select ' + self.what.sql()

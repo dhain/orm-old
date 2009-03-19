@@ -30,6 +30,39 @@ class Column(Expr):
         return []
 
 
+class ToOne(Column):
+    def __init__(self, model, column='pk', name=None):
+        self.model = model
+        self.column = column
+        self.name = name
+        self.primary = False
+    
+    def _promote_by_name(self):
+        if isinstance(self.model, basestring):
+            try:
+                self.model = _REGISTERED[self.model]
+            except KeyError:
+                raise RuntimeError('by-name model reference for '
+                                   'unregistered model %s' % (self.model,))
+        if isinstance(self.column, basestring):
+            try:
+                self.column = getattr(self.model, self.column)
+            except AttributeError:
+                raise RuntimeError('by-name column reference for '
+                                   'unknown column %s' % (self.column,))
+    
+    def converter(self, value):
+        self._promote_by_name()
+        try:
+            return self.model.find(self.column == value)[0]
+        except IndexError:
+            return None
+    
+    def adapter(self, value):
+        self._promote_by_name()
+        return getattr(value, value._orm_attrs[self.column.name])
+
+
 class Model(object):
     class __metaclass__(type):
         def __new__(cls, name, bases, dct):

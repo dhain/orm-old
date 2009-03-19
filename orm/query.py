@@ -264,7 +264,7 @@ class Insert(Expr):
         sql = 'insert into ' + self.table
         if self.values:
             sql += ' (%s) values (%s)' % (
-                    ExprList(self.values.keys()).sql(),
+                    ExprList(Sql(column.name) for column in self.values).sql(),
                     ExprList(self.values.values()).sql())
         else:
             sql += ' default values'

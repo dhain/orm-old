@@ -63,6 +63,34 @@ class ToOne(Column):
         return getattr(value, value._orm_attrs[self.column.name])
 
 
+class ToMany(object):
+    def __init__(self, model, column):
+        self.model = model
+        self.column = column
+    
+    def _promote_by_name(self):
+        if isinstance(self.model, basestring):
+            try:
+                self.model = _REGISTERED[self.model]
+            except KeyError:
+                raise RuntimeError('by-name model reference for '
+                                   'unregistered model %s' % (self.model,))
+        if isinstance(self.column, basestring):
+            try:
+                self.column = getattr(self.model, self.column)
+            except AttributeError:
+                raise RuntimeError('by-name column reference for '
+                                   'unknown column %s' % (self.column,))
+        self.column._promote_by_name()
+    
+    def __get__(self, obj, cls):
+        self._promote_by_name()
+        if obj is None:
+            return self
+        value = getattr(obj, obj._orm_attrs[self.column.column.name])
+        return self.model.find(self.column == value)
+
+
 class Model(object):
     class __metaclass__(type):
         def __new__(cls, name, bases, dct):

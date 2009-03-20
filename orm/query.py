@@ -216,7 +216,7 @@ class Select(Expr):
             for row in result:
                 yield row
     
-    def count(self):
+    def __len__(self):
         s = Select(Sql('count(*)'), self.sources, self.where, self.slice)
         return connection.cursor().execute(s.sql(), s.args()).fetchone()[0]
     

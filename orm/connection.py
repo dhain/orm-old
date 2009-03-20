@@ -21,3 +21,10 @@ def cursor():
     if connection is None:
         raise RuntimeError('not connected')
     return connection.cursor()
+
+
+def commit():
+    global connection
+    if connection is None:
+        raise RuntimeError('not connected')
+    connection.commit()

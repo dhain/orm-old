@@ -216,6 +216,10 @@ class Select(Expr):
             for row in result:
                 yield row
     
+    def count(self):
+        s = Select(Sql('count(*)'), self.sources, self.where, self.slice)
+        return connection.cursor().execute(s.sql(), s.args()).fetchone()[0]
+    
     def sql(self):
         sql = 'select ' + self.what.sql()
         if self.sources is not None:

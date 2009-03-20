@@ -5,12 +5,20 @@ from orm.query import *
 _REGISTERED = {}
 
 
+__all__ = 'Column ToOne ToMany Model'.split()
+
+
 class Column(Expr):
     def __init__(self, name=None, primary=False, converter=None, adapter=None):
         self.name = name
         self.primary = primary
-        self.converter = converter
-        self.adapter = adapter
+        if converter is not None:
+            self.converter = converter
+        if adapter is not None:
+            self.adapter = adapter
+    
+    converter = None
+    adapter = None
     
     def __get__(self, obj, cls):
         if obj is None:

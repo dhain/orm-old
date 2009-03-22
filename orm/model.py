@@ -55,17 +55,20 @@ class Reference(object):
         self.my_column = my_column
         self.other_column = other_column
     
+    def _column_by_name(self, name):
+        model, attr = name.split('.')
+        try:
+            return getattr(_REGISTERED[model], attr)
+        except KeyError:
+            raise RuntimeError('by-name model reference for '
+                               'unregistered model %s' % (model,))
+        except AttributeError:
+            raise RuntimeError('by-name column reference for '
+                               'unknown column %s.%s' % (model, attr))
+    
     def _promote_by_name(self):
         if isinstance(self.other_column, basestring):
-            model, attr = self.other_column.split('.')
-            try:
-                self.other_column = getattr(_REGISTERED[model], attr)
-            except KeyError:
-                raise RuntimeError('by-name model reference for '
-                                   'unregistered model %s' % (model,))
-            except AttributeError:
-                raise RuntimeError('by-name column reference for '
-                                   'unknown column %s.%s' % (model, attr))
+            self.other_column = self._column_by_name(self.other_column)
 
 
 class ToOne(Reference):
@@ -96,6 +99,33 @@ class ToMany(Reference):
             return self
         value = obj._orm_get_column(self.my_column)
         return self.other_column.model.find(self.other_column == value)
+
+
+class ManyToMany(Reference):
+    def __init__(self, my_column, join_mine, join_other, other_column):
+        self.my_column = my_column
+        self.join_mine = join_mine
+        self.join_other = join_other
+        self.other_column = other_column
+    
+    def _promote_by_name(self):
+        if isinstance(self.join_mine, basestring):
+            self.join_mine = self._column_by_name(self.join_mine)
+        if isinstance(self.join_other, basestring):
+            self.join_other = self._column_by_name(self.join_other)
+        if isinstance(self.other_column, basestring):
+            self.other_column = self._column_by_name(self.other_column)
+    
+    def __get__(self, obj, cls):
+        self._promote_by_name()
+        if obj is None:
+            return self
+        value = obj._orm_get_column(self.my_column)
+        return Select(ExprList(self.other_column.model._orm_column_objects()),
+                      ModelList([self.join_mine.model,
+                                 self.other_column.model]),
+                      And(self.join_mine == value,
+                          self.join_other == self.other_column))
 
 
 class Model(object):
@@ -152,6 +182,10 @@ class Model(object):
     def _orm_del_column(self, column):
         return delattr(self, self._orm_attrs[column.name])
     
+    @classmethod
+    def _orm_column_objects(cls):
+        return [getattr(cls, a) for a in cls._orm_attrs.values()]
+    
     def _orm_where_pk(self, old=False):
         pk = self._orm_old_pk if old else getattr(self, self._orm_pk_attr)
         return getattr(type(self), self._orm_pk_attr) == pk
@@ -196,12 +230,14 @@ class Model(object):
     def find(cls, where=None, *ands):
         if ands:
             where = reduce(And, ands, where)
-        return Select(sources=ModelList([cls]), where=where)
+        return Select(ExprList(cls._orm_column_objects()),
+                      ModelList([cls]), where)
     
     @classmethod
     def get(cls, pk):
         try:
-            return Select(sources=ModelList([cls]), where=(cls.pk == pk))[0]
+            return Select(ExprList(cls._orm_column_objects()),
+                          ModelList([cls]), cls.pk == pk)[0]
         except IndexError:
             raise KeyError(pk, 'no such row')
     

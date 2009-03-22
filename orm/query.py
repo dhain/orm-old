@@ -207,8 +207,11 @@ class Select(Expr):
             for row in result:
                 res = []
                 for model in self.sources:
-                    mdesc = tuple((d[0], i) for i, d in enumerate(description)
-                                  if d[0] in model._orm_attrs)
+                    mdesc = tuple((description[i][0], i)
+                                  for i, c in enumerate(self.what)
+                                  if c.model is model)
+                    if not mdesc:
+                        continue
                     mrow = tuple(row[d[1]] for d in mdesc)
                     res.append(model._orm_load(mrow, mdesc))
                 yield tuple(res) if len(res) > 1 else res[0]

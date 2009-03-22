@@ -21,15 +21,21 @@ class Column(Expr):
     adapter = None
     
     def __get__(self, obj, cls):
+        if not hasattr(self, 'model'):
+            self = self._bind(cls)
         if obj is None:
             return self
         if self.primary:
             return None
         return obj._orm_load_column(self)
     
+    def _bind(self, model):
+        return BoundColumn(model, self.name, self.primary,
+                           self.converter, self.adapter)
+    
     def sql(self):
-        if hasattr(self, 'table'):
-            expr = '"%s"."%s"' % (self.table, self.name)
+        if hasattr(self, 'model'):
+            expr = '"%s"."%s"' % (self.model._orm_table, self.name)
         else:
             expr = '"%s"' % (self.name,)
         return expr
@@ -38,65 +44,58 @@ class Column(Expr):
         return []
 
 
-class ToOne(Column):
-    def __init__(self, model, column='pk', name=None):
+class BoundColumn(Column):
+    def __init__(self, model, *args, **kwargs):
+        super(BoundColumn, self).__init__(*args, **kwargs)
         self.model = model
-        self.column = column
-        self.name = name
-        self.primary = False
-    
-    def _promote_by_name(self):
-        if isinstance(self.model, basestring):
-            try:
-                self.model = _REGISTERED[self.model]
-            except KeyError:
-                raise RuntimeError('by-name model reference for '
-                                   'unregistered model %s' % (self.model,))
-        if isinstance(self.column, basestring):
-            try:
-                self.column = getattr(self.model, self.column)
-            except AttributeError:
-                raise RuntimeError('by-name column reference for '
-                                   'unknown column %s' % (self.column,))
-    
-    def converter(self, value):
-        self._promote_by_name()
-        try:
-            return self.model.find(self.column == value)[0]
-        except IndexError:
-            return None
-    
-    def adapter(self, value):
-        self._promote_by_name()
-        return getattr(value, value._orm_attrs[self.column.name])
 
 
-class ToMany(object):
-    def __init__(self, model, column):
-        self.model = model
-        self.column = column
+class Reference(object):
+    def __init__(self, my_column, other_column):
+        self.my_column = my_column
+        self.other_column = other_column
     
     def _promote_by_name(self):
-        if isinstance(self.model, basestring):
+        if isinstance(self.other_column, basestring):
+            model, attr = self.other_column.split('.')
             try:
-                self.model = _REGISTERED[self.model]
+                self.other_column = getattr(_REGISTERED[model], attr)
             except KeyError:
                 raise RuntimeError('by-name model reference for '
-                                   'unregistered model %s' % (self.model,))
-        if isinstance(self.column, basestring):
-            try:
-                self.column = getattr(self.model, self.column)
+                                   'unregistered model %s' % (model,))
             except AttributeError:
                 raise RuntimeError('by-name column reference for '
-                                   'unknown column %s' % (self.column,))
-        self.column._promote_by_name()
-    
+                                   'unknown column %s.%s' % (model, attr))
+
+
+class ToOne(Reference):
     def __get__(self, obj, cls):
         self._promote_by_name()
         if obj is None:
             return self
-        value = getattr(obj, obj._orm_attrs[self.column.column.name])
-        return self.model.find(self.column == value)
+        value = obj._orm_get_column(self.my_column)
+        try:
+            return self.other_column.model.find(self.other_column == value)[0]
+        except IndexError:
+            return None
+    
+    def __set__(self, obj, value):
+        self._promote_by_name()
+        obj._orm_set_column(self.my_column,
+                            value._orm_get_column(self.other_column))
+    
+    def __delete__(self, obj):
+        self._promote_by_name()
+        obj._orm_del_column(self.my_column)
+
+
+class ToMany(Reference):
+    def __get__(self, obj, cls):
+        self._promote_by_name()
+        if obj is None:
+            return self
+        value = obj._orm_get_column(self.my_column)
+        return self.other_column.model.find(self.other_column == value)
 
 
 class Model(object):
@@ -110,7 +109,6 @@ class Model(object):
             for k in dct:
                 v = dct[k]
                 if isinstance(v, Column):
-                    v.table = dct['_orm_table']
                     if v.name is None:
                         v.name = k
                     dct['_orm_attrs'][v.name] = k
@@ -119,7 +117,6 @@ class Model(object):
                         dct['_orm_pk_attr'] = k
             if dct['_orm_pk_attr'] is None:
                 dct['pk'] = Column(name='oid', primary=True)
-                dct['pk'].table = dct['_orm_table']
                 dct['_orm_pk_attr'] = dct['_orm_attrs']['oid'] = 'pk'
                 dct['_orm_columns']['pk'] = 'oid'
             dct['_orm_dirty_attrs'] = set()
@@ -145,6 +142,15 @@ class Model(object):
     
     def _orm_setattr(self, attr, value):
         return super(Model, self).__setattr__(attr, value)
+    
+    def _orm_get_column(self, column):
+        return getattr(self, self._orm_attrs[column.name])
+    
+    def _orm_set_column(self, column, value):
+        return setattr(self, self._orm_attrs[column.name], value)
+    
+    def _orm_del_column(self, column):
+        return delattr(self, self._orm_attrs[column.name])
     
     def _orm_where_pk(self, old=False):
         pk = self._orm_old_pk if old else getattr(self, self._orm_pk_attr)

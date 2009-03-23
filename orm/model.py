@@ -5,7 +5,7 @@ from orm.query import *
 _REGISTERED = {}
 
 
-__all__ = 'Column ToOne ToMany Model'.split()
+__all__ = 'Column ToOne ToMany ManyToMany Model'.split()
 
 
 class Column(Expr):
@@ -71,7 +71,7 @@ class Reference(object):
             self.other_column = self._column_by_name(self.other_column)
 
 
-class ToOne(Reference):
+class ToOne(Reference, Expr):
     def __get__(self, obj, cls):
         self._promote_by_name()
         if obj is None:
@@ -90,6 +90,26 @@ class ToOne(Reference):
     def __delete__(self, obj):
         self._promote_by_name()
         obj._orm_del_column(self.my_column)
+    
+    def sql(self):
+        return self.my_column.sql()
+    
+    def args(self):
+        return self.my_column.args()
+
+
+class ToManyResult(Select):
+    def __init__(self, reference, select):
+        super(ToManyResult, self).__init__(select.what, select.sources,
+                                           select.where, select.slice)
+        self.reference = reference
+    
+    def add(self, obj):
+        dirty = obj._orm_dirty_attrs
+        obj._orm_dirty_attrs = set()
+        obj._orm_set_column(self.reference.my_column, self.where.rvalue)
+        obj.save()
+        obj._orm_dirty_attrs = dirty
 
 
 class ToMany(Reference):
@@ -98,7 +118,19 @@ class ToMany(Reference):
         if obj is None:
             return self
         value = obj._orm_get_column(self.my_column)
-        return self.other_column.model.find(self.other_column == value)
+        return ToManyResult(self,
+            self.other_column.model.find(self.other_column == value))
+
+
+class ManyToManyResult(ToManyResult):
+    def add(self, obj):
+        model = self.reference.join_mine.model
+        inst = model.__new__(model)
+        inst._orm_set_column(self.reference.join_mine,
+                             self.where.lvalue.rvalue)
+        inst._orm_set_column(self.reference.join_other,
+                             obj._orm_get_column(self.reference.other_column))
+        inst.save()
 
 
 class ManyToMany(Reference):
@@ -121,11 +153,12 @@ class ManyToMany(Reference):
         if obj is None:
             return self
         value = obj._orm_get_column(self.my_column)
-        return Select(ExprList(self.other_column.model._orm_column_objects()),
-                      ModelList([self.join_mine.model,
-                                 self.other_column.model]),
-                      And(self.join_mine == value,
-                          self.join_other == self.other_column))
+        return ManyToManyResult(self,
+            Select(ExprList(self.other_column.model._orm_column_objects()),
+                   ModelList([self.join_mine.model,
+                              self.other_column.model]),
+                   And(self.join_mine == value,
+                       self.join_other == self.other_column)))
 
 
 class Model(object):

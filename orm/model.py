@@ -245,6 +245,7 @@ class Model(object):
     @classmethod
     def _orm_load(cls, row, description):
         self = cls.__new__(cls)
+        self._orm_new_row = False
         for i, column in enumerate(description):
             column = column[0]
             value = row[i]

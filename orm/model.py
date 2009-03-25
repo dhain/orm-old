@@ -84,6 +84,9 @@ class ToOne(Reference, Expr):
     
     def __set__(self, obj, value):
         self._promote_by_name()
+        if not isinstance(value, self.other_column.model):
+            raise TypeError('object must be of type %r' %
+                            (self.other_column.model,))
         obj._orm_set_column(self.my_column,
                             value._orm_get_column(self.other_column))
     
@@ -105,6 +108,9 @@ class ToManyResult(Select):
         self.reference = reference
     
     def add(self, obj):
+        if not isinstance(obj, self.reference.other_column.model):
+            raise TypeError('object must be of type %r' %
+                            (self.reference.other_column.model,))
         dirty = obj._orm_dirty_attrs
         obj._orm_dirty_attrs = set()
         obj._orm_set_column(self.reference.my_column, self.where.rvalue)
@@ -124,6 +130,9 @@ class ToMany(Reference):
 
 class ManyToManyResult(ToManyResult):
     def add(self, obj):
+        if not isinstance(obj, self.reference.other_column.model):
+            raise TypeError('object must be of type %r' %
+                            (self.reference.other_column.model,))
         model = self.reference.join_mine.model
         inst = model.__new__(model)
         inst._orm_set_column(self.reference.join_mine,

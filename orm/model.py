@@ -1,3 +1,5 @@
+from weakref import WeakValueDictionary
+
 from orm import connection
 from orm.query import *
 
@@ -191,10 +193,15 @@ class Model(object):
                 dct['pk'] = Column(name='oid', primary=True)
                 dct['_orm_pk_attr'] = dct['_orm_attrs']['oid'] = 'pk'
                 dct['_orm_columns']['pk'] = 'oid'
-            dct['_orm_dirty_attrs'] = set()
+            dct['_orm_obj_cache'] = WeakValueDictionary()
             inst = type.__new__(cls, name, bases, dct)
             _REGISTERED[name] = inst
             return inst
+    
+    def __new__(cls, *args, **kwargs):
+        self = super(Model, cls).__new__(cls, *args, **kwargs)
+        self._orm_dirty_attrs = set()
+        return self
     
     class pk(object):
         def __get__(self, obj, cls):
@@ -229,8 +236,8 @@ class Model(object):
         return [getattr(cls, a) for a in cls._orm_attrs.values()]
     
     def _orm_where_pk(self, old=False):
-        pk = self._orm_old_pk if old else getattr(self, self._orm_pk_attr)
-        return getattr(type(self), self._orm_pk_attr) == pk
+        pk = self._orm_old_pk if old else self.pk
+        return type(self).pk == pk
     
     def _orm_adapt_attr(self, attr):
         adapter = getattr(type(self), attr).adapter
@@ -253,6 +260,16 @@ class Model(object):
     
     @classmethod
     def _orm_load(cls, row, description):
+        for i, column in enumerate(description):
+            if column[0] == cls.pk.name:
+                pk = row[i]
+                if cls.pk.converter is not None:
+                    pk = cls.pk.converter(pk)
+                break
+        else:
+            raise TypeError('primary key must be present in arguments')
+        if pk in cls._orm_obj_cache:
+            return cls._orm_obj_cache[pk]
         self = cls.__new__(cls)
         self._orm_new_row = False
         for i, column in enumerate(description):
@@ -267,6 +284,7 @@ class Model(object):
             if column.converter is not None:
                 value = column.converter(value)
             self._orm_setattr(attr, value)
+        cls._orm_obj_cache[pk] = self
         return self
     
     @classmethod
@@ -310,6 +328,8 @@ class Model(object):
         else:
             if self._orm_pk_attr in self._orm_dirty_attrs:
                 where = self._orm_where_pk(True)
+                if self._orm_old_pk in self._orm_obj_cache:
+                    del self._orm_obj_cache[self._orm_old_pk]
                 del self._orm_old_pk
             else:
                 where = self._orm_where_pk()
@@ -320,3 +340,4 @@ class Model(object):
             self._orm_new_row = False
             self._orm_setattr(self._orm_pk_attr, cursor.lastrowid)
         self._orm_dirty_attrs.clear()
+        self._orm_obj_cache[self.pk] = self

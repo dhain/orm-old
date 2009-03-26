@@ -4,7 +4,7 @@ from orm.util import slice2limit
 
 __all__ = (
     'Expr BinaryOp Lt Gt Le Ge And Or Add Sub Mul Div Mod In Like Glob Match '
-    'Regexp Eq Ne Sql ExprList ModelList Select Delete Insert Update'
+    'Regexp Eq Ne Sql ExprList ModelList Asc Desc Select Delete Insert Update'
 ).split()
 
 
@@ -185,17 +185,29 @@ class ModelList(list, Expr):
         return []
 
 
+class Asc(Expr):
+    def sql(self):
+        return super(Asc, self).sql() + ' asc'
+
+
+class Desc(Expr):
+    def sql(self):
+        return super(Desc, self).sql() + ' desc'
+
+
 class Select(Expr):
-    def __init__(self, what=None, sources=None, where=None, slice=None):
+    def __init__(self, what=None, sources=None,
+                 where=None, order=None, slice=None):
         if what is None:
             what = ExprList([Sql('*')])
         self.what = what
         self.sources = sources
         self.where = where
+        self.order = order
         self.slice = slice
     
     def __getitem__(self, key):
-        s = Select(self.what, self.sources, self.where)
+        s = Select(self.what, self.sources, self.where, self.order)
         if isinstance(key, int):
             s.slice = slice(key, key + 1)
             try:
@@ -226,8 +238,13 @@ class Select(Expr):
                 yield row
     
     def __len__(self):
-        s = Select(Sql('count(*)'), self.sources, self.where, self.slice)
+        s = Select(Sql('count(*)'), self.sources,
+                   self.where, self.order, self.slice)
         return connection.cursor().execute(s.sql(), s.args()).fetchone()[0]
+    
+    def order_by(self, *args):
+        return Select(self.what, self.sources, self.where,
+                      ExprList(args), self.slice)
     
     def sql(self):
         sql = 'select ' + self.what.sql()
@@ -235,6 +252,8 @@ class Select(Expr):
             sql += ' from ' + self.sources.sql()
         if self.where is not None:
             sql += ' where ' + self.where.sql()
+        if self.order is not None:
+            sql += ' order by ' + self.order.sql()
         if self.slice is not None:
             slc = slice2limit(self.slice)
             if slc:
@@ -247,6 +266,8 @@ class Select(Expr):
             args.extend(self.sources.args())
         if self.where is not None:
             args.extend(self.where.args())
+        if self.order is not None:
+            args.extend(self.order.args())
         return args
 
 

@@ -106,7 +106,8 @@ class ToOne(Reference, Expr):
 class ToManyResult(Select):
     def __init__(self, reference, select):
         super(ToManyResult, self).__init__(select.what, select.sources,
-                                           select.where, select.slice)
+                                           select.where, select.order,
+                                           select.slice)
         self.reference = reference
     
     def add(self, obj):

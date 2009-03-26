@@ -269,9 +269,10 @@ class Model(object):
         else:
             raise TypeError('primary key must be present in arguments')
         if pk in cls._orm_obj_cache:
-            return cls._orm_obj_cache[pk]
-        self = cls.__new__(cls)
-        self._orm_new_row = False
+            self = cls._orm_obj_cache[pk]
+        else:
+            self = cls.__new__(cls)
+            self._orm_new_row = False
         for i, column in enumerate(description):
             column = column[0]
             value = row[i]
@@ -280,10 +281,11 @@ class Model(object):
             except KeyError:
                 self._orm_setattr(column, value)
                 return
-            column = getattr(cls, attr)
-            if column.converter is not None:
-                value = column.converter(value)
-            self._orm_setattr(attr, value)
+            if not attr in self._orm_dirty_attrs:
+                column = getattr(cls, attr)
+                if column.converter is not None:
+                    value = column.converter(value)
+                self._orm_setattr(attr, value)
         cls._orm_obj_cache[pk] = self
         return self
     
@@ -311,6 +313,8 @@ class Model(object):
     def delete(self):
         if self._orm_new_row:
             return
+        if self.pk in self._orm_obj_cache:
+            del self._orm_obj_cache[self.pk]
         q = Delete(Sql(self._orm_table), self._orm_where_pk())
         connection.cursor().execute(q.sql(), q.args())
         self._orm_new_row = True

@@ -2,6 +2,12 @@ from orm import connection
 from orm.util import slice2limit
 
 
+__all__ = (
+    'Expr BinaryOp Lt Gt Le Ge And Or Add Sub Mul Div Mod In Like Glob Match '
+    'Regexp Eq Ne Sql ExprList ModelList Select Delete Insert Update'
+).split()
+
+
 class Expr(object):
     def __init__(self, value):
         self.value = value

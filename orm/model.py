@@ -200,7 +200,7 @@ class Model(object):
             return inst
     
     def __new__(cls, *args, **kwargs):
-        self = super(Model, cls).__new__(cls, *args, **kwargs)
+        self = super(Model, cls).__new__(cls)
         self._orm_dirty_attrs = set()
         return self
     

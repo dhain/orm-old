@@ -175,29 +175,27 @@ class ManyToMany(Reference):
 
 class Model(object):
     class __metaclass__(type):
-        def __new__(cls, name, bases, dct):
+        def __init__(cls, name, bases, ns):
             if bases == (object,):
-                return type.__new__(cls, name, bases, dct)
-            dct['_orm_attrs'] = {}
-            dct['_orm_columns'] = {}
-            dct['_orm_pk_attr'] = None
-            for k in dct:
-                v = dct[k]
+                return
+            cls._orm_attrs = {}
+            cls._orm_columns = {}
+            cls._orm_pk_attr = None
+            for k in ns:
+                v = ns[k]
                 if isinstance(v, Column):
                     if v.name is None:
                         v.name = k
-                    dct['_orm_attrs'][v.name] = k
-                    dct['_orm_columns'][k] = v.name
+                    cls._orm_attrs[v.name] = k
+                    cls._orm_columns[k] = v.name
                     if v.primary:
-                        dct['_orm_pk_attr'] = k
-            if dct['_orm_pk_attr'] is None:
-                dct['pk'] = Column(name='oid', primary=True)
-                dct['_orm_pk_attr'] = dct['_orm_attrs']['oid'] = 'pk'
-                dct['_orm_columns']['pk'] = 'oid'
-            dct['_orm_obj_cache'] = WeakValueDictionary()
-            inst = type.__new__(cls, name, bases, dct)
-            _REGISTERED[name] = inst
-            return inst
+                        cls._orm_pk_attr = k
+            if cls._orm_pk_attr is None:
+                cls.pk = Column(name='oid', primary=True)
+                cls._orm_pk_attr = cls._orm_attrs['oid'] = 'pk'
+                cls._orm_columns['pk'] = 'oid'
+            cls._orm_obj_cache = WeakValueDictionary()
+            _REGISTERED[name] = cls
     
     def __new__(cls, *args, **kwargs):
         self = super(Model, cls).__new__(cls)

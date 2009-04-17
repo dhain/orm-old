@@ -7,7 +7,7 @@ from orm.query import *
 _REGISTERED = {}
 
 
-__all__ = 'Column ToOne ToMany ManyToMany Model'.split()
+__all__ = 'Column SqlColumn ToOne ToMany ManyToMany Model'.split()
 
 
 class Column(Expr):
@@ -46,9 +46,33 @@ class Column(Expr):
         return []
 
 
+class SqlColumn(Column):
+    def __init__(self, expr, args=(), name=None, converter=None, adapter=None):
+        super(SqlColumn, self).__init__(name, False, converter, adapter)
+        self.sql_expr = expr
+        self.sql_args = args
+
+    def _bind(self, model):
+        return BoundSqlColumn(model, self.sql_expr, self.sql_args,
+                              self.name, self.converter,
+                              self.adapter)
+
+    def sql(self):
+        return self.sql_expr + ' as "%s"' % (self.name,)
+
+    def args(self):
+        return self.sql_args
+
+
 class BoundColumn(Column):
     def __init__(self, model, *args, **kwargs):
         super(BoundColumn, self).__init__(*args, **kwargs)
+        self.model = model
+
+
+class BoundSqlColumn(SqlColumn):
+    def __init__(self, model, *args, **kwargs):
+        super(BoundSqlColumn, self).__init__(*args, **kwargs)
         self.model = model
 
 
@@ -186,7 +210,7 @@ class Model(object):
                 if isinstance(v, Column):
                     if v.name is None:
                         v.name = k
-                    cls._orm_attrs[v.name] = k
+                    cls._orm_attrs[v.name.split(' ', 1)[0]] = k
                     cls._orm_columns[k] = v.name
                     if v.primary:
                         cls._orm_pk_attr = k

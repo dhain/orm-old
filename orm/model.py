@@ -110,11 +110,14 @@ class ToOne(Reference, Expr):
     
     def __set__(self, obj, value):
         self._promote_by_name()
-        if not isinstance(value, self.other_column.model):
-            raise TypeError('object must be of type %r' %
-                            (self.other_column.model,))
-        obj._orm_set_column(self.my_column,
-                            value._orm_get_column(self.other_column))
+        if value is None:
+            obj._orm_set_column(self.my_column, None)
+        else:
+            if not isinstance(value, self.other_column.model):
+                raise TypeError('object must be of type %r' %
+                                (self.other_column.model,))
+            obj._orm_set_column(self.my_column,
+                                value._orm_get_column(self.other_column))
     
     def __delete__(self, obj):
         self._promote_by_name()

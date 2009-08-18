@@ -242,6 +242,13 @@ class Select(Expr):
                    self.where, self.order, self.slice)
         return connection.cursor().execute(s.sql(), s.args()).fetchone()[0]
     
+    def find(self, where=None, *ands):
+        if ands:
+            where = reduce(And, ands, where)
+        return Select(self.what, self.sources,
+                      self.where & where,
+                      self.order, self.slice)
+
     def order_by(self, *args):
         return Select(self.what, self.sources, self.where,
                       ExprList(args), self.slice)

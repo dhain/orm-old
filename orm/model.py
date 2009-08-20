@@ -18,10 +18,10 @@ class Column(Expr):
             self.converter = converter
         if adapter is not None:
             self.adapter = adapter
-    
+
     converter = None
     adapter = None
-    
+
     def __get__(self, obj, cls):
         if not hasattr(self, 'model'):
             self = self._bind(cls)
@@ -30,18 +30,18 @@ class Column(Expr):
         if self.primary:
             return None
         return obj._orm_load_column(self)
-    
+
     def _bind(self, model):
         return BoundColumn(model, self.name, self.primary,
                            self.converter, self.adapter)
-    
+
     def sql(self):
         if hasattr(self, 'model'):
             expr = '"%s"."%s"' % (self.model._orm_table, self.name)
         else:
             expr = '"%s"' % (self.name,)
         return expr
-    
+
     def args(self):
         return []
 
@@ -80,7 +80,7 @@ class Reference(object):
     def __init__(self, my_column, other_column):
         self.my_column = my_column
         self.other_column = other_column
-    
+
     def _column_by_name(self, name):
         model, attr = name.split('.')
         try:
@@ -91,7 +91,7 @@ class Reference(object):
         except AttributeError:
             raise RuntimeError('by-name column reference for '
                                'unknown column %s.%s' % (model, attr))
-    
+
     def _promote_by_name(self):
         if isinstance(self.other_column, basestring):
             self.other_column = self._column_by_name(self.other_column)
@@ -107,7 +107,7 @@ class ToOne(Reference, Expr):
             return self.other_column.model.find(self.other_column == value)[0]
         except IndexError:
             return None
-    
+
     def __set__(self, obj, value):
         self._promote_by_name()
         if value is None:
@@ -118,14 +118,14 @@ class ToOne(Reference, Expr):
                                 (self.other_column.model,))
             obj._orm_set_column(self.my_column,
                                 value._orm_get_column(self.other_column))
-    
+
     def __delete__(self, obj):
         self._promote_by_name()
         obj._orm_del_column(self.my_column)
-    
+
     def sql(self):
         return self.my_column.sql()
-    
+
     def args(self):
         return self.my_column.args()
 
@@ -136,7 +136,7 @@ class ToManyResult(Select):
                                            select.where, select.order,
                                            select.slice)
         self.reference = reference
-    
+
     def add(self, obj):
         if not isinstance(obj, self.reference.other_column.model):
             raise TypeError('object must be of type %r' %
@@ -178,7 +178,7 @@ class ManyToMany(Reference):
         self.join_mine = join_mine
         self.join_other = join_other
         self.other_column = other_column
-    
+
     def _promote_by_name(self):
         if isinstance(self.join_mine, basestring):
             self.join_mine = self._column_by_name(self.join_mine)
@@ -186,7 +186,7 @@ class ManyToMany(Reference):
             self.join_other = self._column_by_name(self.join_other)
         if isinstance(self.other_column, basestring):
             self.other_column = self._column_by_name(self.other_column)
-    
+
     def __get__(self, obj, cls):
         self._promote_by_name()
         if obj is None:
@@ -223,55 +223,55 @@ class Model(object):
                 cls._orm_columns['pk'] = 'oid'
             cls._orm_obj_cache = WeakValueDictionary()
             _REGISTERED[name] = cls
-    
+
     def __new__(cls, *args, **kwargs):
         self = super(Model, cls).__new__(cls)
         self._orm_dirty_attrs = set()
         return self
-    
+
     class pk(object):
         def __get__(self, obj, cls):
             if obj is None:
                 obj = cls
             return getattr(obj, obj._orm_pk_attr)
     pk = pk()
-    
+
     _orm_new_row = True
-    
+
     def __setattr__(self, name, value):
         if name in self._orm_columns:
             if name == self._orm_pk_attr and not self._orm_new_row:
                 self._orm_old_pk = self.pk
             self._orm_dirty_attrs.add(name)
         super(Model, self).__setattr__(name, value)
-    
+
     def _orm_setattr(self, attr, value):
         return super(Model, self).__setattr__(attr, value)
-    
+
     def _orm_get_column(self, column):
         return getattr(self, self._orm_attrs[column.name])
-    
+
     def _orm_set_column(self, column, value):
         return setattr(self, self._orm_attrs[column.name], value)
-    
+
     def _orm_del_column(self, column):
         return delattr(self, self._orm_attrs[column.name])
-    
+
     @classmethod
     def _orm_column_objects(cls):
         return [getattr(cls, a) for a in cls._orm_attrs.values()]
-    
+
     def _orm_where_pk(self, old=False):
         pk = self._orm_old_pk if old else self.pk
         return type(self).pk == pk
-    
+
     def _orm_adapt_attr(self, attr):
         adapter = getattr(type(self), attr).adapter
         value = getattr(self, attr)
         if adapter is not None:
             value = adapter(value)
         return value
-    
+
     def _orm_load_column(self, column):
         if self._orm_new_row:
             return None
@@ -283,7 +283,7 @@ class Model(object):
         self._orm_setattr(attr, value)
         self._orm_dirty_attrs.discard(attr)
         return value
-    
+
     @classmethod
     def _orm_load(cls, row, description):
         for i, column in enumerate(description):
@@ -314,14 +314,14 @@ class Model(object):
                 self._orm_setattr(attr, value)
         cls._orm_obj_cache[pk] = self
         return self
-    
+
     @classmethod
     def find(cls, where=None, *ands):
         if ands:
             where = reduce(And, ands, where)
         return Select(ExprList(cls._orm_column_objects()),
                       ModelList([cls]), where)
-    
+
     @classmethod
     def get(cls, pk):
         try:
@@ -329,13 +329,13 @@ class Model(object):
                           ModelList([cls]), cls.pk == pk)[0]
         except IndexError:
             raise KeyError(pk, 'no such row')
-    
+
     def reload(self):
         for attr in self._orm_columns:
             if attr == self._orm_pk_attr:
                 continue
             delattr(self, attr)
-    
+
     def delete(self):
         if self._orm_new_row:
             return
@@ -347,7 +347,7 @@ class Model(object):
         self._orm_dirty_attrs.update(self._orm_columns)
         self._orm_dirty_attrs.remove(self._orm_pk_attr)
         delattr(self, self._orm_pk_attr)
-    
+
     def save(self):
         if not self._orm_dirty_attrs and not self._orm_new_row:
             return

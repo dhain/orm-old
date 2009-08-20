@@ -16,10 +16,25 @@ def connect(database, timeout=None, isolation_level=None, detect_types=None):
     connection = sqlite3.connect(database, **kw)
 
 
+class printing_cursor(object):
+    def __init__(self, cursor):
+        self.cursor = cursor
+
+    def __getattr__(self, name):
+        if name == 'cursor':
+            return super(printing_cursor, self).__getattr__(name)
+        return getattr(self.cursor, name)
+
+    def execute(self, sql, *args):
+        print sql, args
+        return self.cursor.execute(sql, *args)
+
+
 def cursor():
     global connection
     if connection is None:
         raise RuntimeError('not connected')
+    #return printing_cursor(connection.cursor())
     return connection.cursor()
 
 

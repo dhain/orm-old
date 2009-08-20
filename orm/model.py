@@ -143,9 +143,15 @@ class ToManyResult(Select):
                             (self.reference.other_column.model,))
         dirty = obj._orm_dirty_attrs
         obj._orm_dirty_attrs = set()
-        obj._orm_set_column(self.reference.my_column, self.where.rvalue)
+        obj._orm_set_column(self.reference.other_column, self.where.rvalue)
         obj.save()
         obj._orm_dirty_attrs = dirty
+
+    def clear(self):
+        u = Update(self.reference.other_column.model,
+                   {self.reference.other_column: None},
+                   self.reference.other_column == self.where.rvalue)
+        connection.cursor().execute(u.sql(), u.args())
 
 
 class ToMany(Reference):
@@ -159,6 +165,10 @@ class ToMany(Reference):
 
 
 class ManyToManyResult(ToManyResult):
+    def __init__(self, reference, select, filtered=False):
+        super(ManyToManyResult, self).__init__(reference, select)
+        self.filtered = filtered
+
     def add(self, obj):
         if not isinstance(obj, self.reference.other_column.model):
             raise TypeError('object must be of type %r' %
@@ -170,6 +180,20 @@ class ManyToManyResult(ToManyResult):
         inst._orm_set_column(self.reference.join_other,
                              obj._orm_get_column(self.reference.other_column))
         inst.save()
+
+    def find(self, where=None, *ands):
+        find = super(ManyToManyResult, self).find(where, *ands)
+        return ManyToManyResult(self.reference, find, True)
+
+    def clear(self):
+        model = self.reference.join_mine.model
+        if self.filtered:
+            what = ExprList([model.pk])
+            s = Select(what, self.sources, self.where, self.order, self.slice)
+            model.find(model.pk.is_in(s)).delete()
+        else:
+            model.find(self.reference.join_mine ==
+                       self.where.lvalue.rvalue).delete()
 
 
 class ManyToMany(Reference):
@@ -218,9 +242,9 @@ class Model(object):
                     if v.primary:
                         cls._orm_pk_attr = k
             if cls._orm_pk_attr is None:
-                cls.pk = Column(name='oid', primary=True)
-                cls._orm_pk_attr = cls._orm_attrs['oid'] = 'pk'
-                cls._orm_columns['pk'] = 'oid'
+                cls.pk = Column(name='rowid', primary=True)
+                cls._orm_pk_attr = cls._orm_attrs['rowid'] = 'pk'
+                cls._orm_columns['pk'] = 'rowid'
             cls._orm_obj_cache = WeakValueDictionary()
             _REGISTERED[name] = cls
 
@@ -354,7 +378,7 @@ class Model(object):
         values = dict((getattr(type(self), attr), self._orm_adapt_attr(attr))
                       for attr in self._orm_dirty_attrs)
         if self._orm_new_row:
-            q = Insert(self._orm_table, values)
+            q = Insert(self, values)
         else:
             if self._orm_pk_attr in self._orm_dirty_attrs:
                 where = self._orm_where_pk(True)
@@ -363,7 +387,7 @@ class Model(object):
                 del self._orm_old_pk
             else:
                 where = self._orm_where_pk()
-            q = Update(self._orm_table, values, where)
+            q = Update(self, values, where)
         cursor = connection.cursor()
         cursor.execute(q.sql(), q.args())
         if self._orm_new_row:

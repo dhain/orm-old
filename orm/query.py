@@ -115,7 +115,6 @@ binary_ops = [
     ('Mul', '*'),
     ('Div', '/'),
     ('Mod', '%'),
-    ('In', 'in'),
     ('Like', 'like'),
     ('Glob', 'glob'),
     ('Match', 'match'),
@@ -154,6 +153,15 @@ class Ne(BinaryOp):
         return super(Eq, self).args()
 
 
+class In(BinaryOp):
+    _op = 'in'
+
+    def sql(self):
+        if isinstance(self.rvalue, Select):
+            return '%s in (%s)' % (self.lvalue.sql(), self.rvalue.sql())
+        return super(In, self).sql()
+
+
 class Sql(Expr):
     def sql(self):
         return self.value
@@ -177,7 +185,7 @@ class ExprList(list, Expr):
         return args
 
 
-class ModelList(list, Expr):
+class ModelList(ExprList):
     def sql(self):
         return ', '.join((item._orm_table for item in self))
 
@@ -253,6 +261,10 @@ class Select(Expr):
         return Select(self.what, self.sources, self.where,
                       ExprList(args), self.slice)
 
+    def delete(self):
+        d = Delete(self.sources, self.where, self.order, self.slice)
+        connection.cursor().execute(d.sql(), d.args())
+
     def sql(self):
         sql = 'select ' + self.what.sql()
         if self.sources is not None:
@@ -279,14 +291,24 @@ class Select(Expr):
 
 
 class Delete(Expr):
-    def __init__(self, sources, where=None):
+    def __init__(self, sources, where=None, order=None, slice=None):
+        if isinstance(sources, ExprList) and len(sources) > 1:
+            raise TypeError("can't delete from more than one table")
         self.sources = sources
         self.where = where
+        self.order = order
+        self.slice = slice
 
     def sql(self):
         sql = 'delete from ' + self.sources.sql()
         if self.where is not None:
             sql += ' where ' + self.where.sql()
+        if self.order is not None:
+            sql += ' order by ' + self.order.sql()
+        if self.slice is not None:
+            slc = slice2limit(self.slice)
+            if slc:
+                sql += ' ' + slc
         return sql
 
     def args(self):
@@ -297,12 +319,12 @@ class Delete(Expr):
 
 
 class Insert(Expr):
-    def __init__(self, table, values=None):
-        self.table = table
+    def __init__(self, model, values=None):
+        self.model = model
         self.values = values
 
     def sql(self):
-        sql = 'insert into ' + self.table
+        sql = 'insert into ' + self.model._orm_table
         if self.values:
             sql += ' (%s) values (%s)' % (
                     ExprList(Sql(column.name) for column in self.values).sql(),
@@ -323,8 +345,8 @@ class Insert(Expr):
 
 
 class Update(Expr):
-    def __init__(self, table, values, where=None):
-        self.table = table
+    def __init__(self, model, values, where=None):
+        self.model = model
         self.values = values
         self.where = where
 
@@ -332,7 +354,7 @@ class Update(Expr):
         values = [column.name +
                   (' = ' + value.sql() if hasattr(value, 'sql') else ' = ?')
                   for column, value in self.values.iteritems()]
-        sql = 'update ' + self.table + ' set ' + ', '.join(values)
+        sql = 'update ' + self.model._orm_table + ' set ' + ', '.join(values)
         if self.where is not None:
             sql += ' where ' + self.where.sql()
         return sql

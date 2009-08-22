@@ -140,17 +140,17 @@ class Eq(BinaryOp):
 
 
 class Ne(BinaryOp):
-    _op = '='
+    _op = '!='
 
     def sql(self):
         if self.rvalue is None:
             return ' '.join((self.lvalue.sql(), 'notnull'))
-        return super(Eq, self).sql()
+        return super(Ne, self).sql()
 
     def args(self):
         if self.rvalue is None:
             return self.lvalue.args()
-        return super(Eq, self).args()
+        return super(Ne, self).args()
 
 
 class In(BinaryOp):

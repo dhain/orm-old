@@ -103,6 +103,8 @@ class ToOne(Reference, Expr):
         if obj is None:
             return self
         value = obj._orm_get_column(self.my_column)
+        if value is None:
+            return None
         try:
             return self.other_column.model.find(self.other_column == value)[0]
         except IndexError:

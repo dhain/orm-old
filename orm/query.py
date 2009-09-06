@@ -250,6 +250,10 @@ class Select(Expr):
                    self.where, self.order, self.slice)
         return connection.cursor().execute(s.sql(), s.args()).fetchone()[0]
 
+    def exists(self):
+        s = Select(Sql('1'), self.sources, self.where, self.order, self.slice)
+        return connection.cursor().execute(s.sql(), s.args()).fetchone() is not None
+
     def find(self, where=None, *ands):
         if ands:
             where = reduce(And, ands, where)

@@ -216,7 +216,7 @@ class Select(Expr):
 
     def __getitem__(self, key):
         s = Select(self.what, self.sources, self.where, self.order)
-        if isinstance(key, int):
+        if isinstance(key, (int, long)):
             s.slice = slice(key, key + 1)
             try:
                 return iter(s).next()

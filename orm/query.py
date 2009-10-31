@@ -3,8 +3,10 @@ from orm.util import slice2limit
 
 
 __all__ = (
-    'Expr BinaryOp Lt Gt Le Ge And Or Add Sub Mul Div Mod In Like Glob Match '
-    'Regexp Eq Ne Sql ExprList ModelList Asc Desc Select Delete Insert Update'
+    'Expr UnaryOp BinaryOp '
+    'Not Pos Neg Lt Le Eq Gt Ge Ne And Or Add Sub Mul Div Mod '
+    'In Like Glob Match Regexp Sql ExprList ModelList '
+    'Asc Desc Select Delete Insert Update'
 ).split()
 
 
@@ -84,6 +86,23 @@ class Expr(object):
         if hasattr(self.value, 'args'):
             return self.value.args()
         return [self.value]
+
+
+class UnaryOp(Expr):
+    def sql(self):
+        return ' '.join((
+            self._op,
+            self.value.sql() if hasattr(self.value, 'sql') else '?'))
+
+
+unary_ops = [
+    ('Not', 'not'),
+    ('Pos', '+'),
+    ('Neg', '-'),
+]
+for classname, op in unary_ops:
+    locals()[classname] = type(classname, (UnaryOp,), dict(_op=op))
+del classname, op, unary_ops
 
 
 class BinaryOp(Expr):
@@ -373,5 +392,3 @@ class Update(Expr):
         if self.where is not None:
             args.extend(self.where.args())
         return args
-
-

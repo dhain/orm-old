@@ -118,3 +118,32 @@ def test_empty_find():
     assert find.where is None, find.where
     assert find.sql() == 'select 1', find.sql()
     assert find.args() == [], find.args()
+
+
+def test_chained_find():
+    find = Select(Sql('1')).find(Sql('2')).find(Sql('3'))
+    assert isinstance(find, Select), find
+    assert find.sql() == 'select 1 where 2 and 3', find.sql()
+    assert find.args() == [], find.args()
+
+
+def test_order_by():
+    result = Select(Sql('1')).order_by(Sql('2'))
+    assert isinstance(result, Select), result
+    assert result.sql() == 'select 1 order by 2', result.sql()
+    assert result.args() == [], result.args()
+
+
+def test_empty_order_by():
+    result = Select(Sql('1')).order_by()
+    assert isinstance(result, Select), result
+    assert result.order is None, result.order
+    assert result.sql() == 'select 1', result.sql()
+    assert result.args() == [], result.args()
+
+
+def test_chained_order_by():
+    result = Select(Sql('1')).order_by(Sql('2')).order_by(Sql('3'))
+    assert isinstance(result, Select), result
+    assert result.sql() == 'select 1 order by 2, 3', result.sql()
+    assert result.args() == [], result.args()

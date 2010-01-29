@@ -283,8 +283,14 @@ class Select(Expr):
         return Select(self.what, self.sources, where, self.order, self.slice)
 
     def order_by(self, *args):
-        return Select(self.what, self.sources, self.where,
-                      ExprList(args), self.slice)
+        if self.order is not None:
+            order = ExprList(self.order)
+            order.extend(args)
+        elif args:
+            order = ExprList(args)
+        else:
+            order = None
+        return Select(self.what, self.sources, self.where, order, self.slice)
 
     def delete(self):
         d = Delete(self.sources, self.where, self.order, self.slice)

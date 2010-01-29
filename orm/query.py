@@ -226,7 +226,9 @@ class Select(Expr):
     def __init__(self, what=None, sources=None,
                  where=None, order=None, slice=None):
         if what is None:
-            what = ExprList([Sql('*')])
+            if sources is None:
+                raise TypeError('must specify sources when not specifying what')
+            what = Sql('*')
         self.what = what
         self.sources = sources
         self.where = where

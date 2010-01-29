@@ -278,9 +278,9 @@ class Select(Expr):
     def find(self, where=None, *ands):
         if ands:
             where = reduce(And, ands, where)
-        return Select(self.what, self.sources,
-                      self.where & where,
-                      self.order, self.slice)
+        if self.where is not None:
+            where = self.where & where
+        return Select(self.what, self.sources, where, self.order, self.slice)
 
     def order_by(self, *args):
         return Select(self.what, self.sources, self.where,

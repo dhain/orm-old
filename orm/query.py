@@ -346,6 +346,8 @@ class Delete(Expr):
         args = self.sources.args()
         if self.where is not None:
             args.extend(self.where.args())
+        if self.order is not None:
+            args.extend(self.order.args())
         return args
 
 

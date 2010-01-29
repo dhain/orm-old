@@ -106,9 +106,9 @@ def test_exists_returns_true():
 
 
 def test_find():
-    find = Select(Sql('1')).find(Sql('2'))
+    find = Select(Sql('1')).find(Sql('2'), Sql('3'))
     assert isinstance(find, Select), find
-    assert find.sql() == 'select 1 where 2', find.sql()
+    assert find.sql() == 'select 1 where 2 and 3', find.sql()
     assert find.args() == [], find.args()
 
 
@@ -128,9 +128,9 @@ def test_chained_find():
 
 
 def test_order_by():
-    result = Select(Sql('1')).order_by(Sql('2'))
+    result = Select(Sql('1')).order_by(Sql('2'), Sql('3'))
     assert isinstance(result, Select), result
-    assert result.sql() == 'select 1 order by 2', result.sql()
+    assert result.sql() == 'select 1 order by 2, 3', result.sql()
     assert result.args() == [], result.args()
 
 
@@ -146,4 +146,20 @@ def test_chained_order_by():
     result = Select(Sql('1')).order_by(Sql('2')).order_by(Sql('3'))
     assert isinstance(result, Select), result
     assert result.sql() == 'select 1 order by 2, 3', result.sql()
+    assert result.args() == [], result.args()
+
+
+def test_indexing():
+    connection.connection = FakeConnection()
+    result = Select(Sql('1'))[0]
+    assert result == (1,), result
+    execution = connection.connection.cursors[0].executions[0]
+    assert execution == ('select 1 limit 0, 1', []), execution
+
+
+def test_slicing():
+    result = Select(Sql('1'))[5:10]
+    assert isinstance(result, Select), result
+    assert result.slice == slice(5, 10), result.slice
+    assert result.sql() == 'select 1 limit 5, 5', result.sql()
     assert result.args() == [], result.args()

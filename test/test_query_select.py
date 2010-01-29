@@ -157,9 +157,27 @@ def test_indexing():
     assert execution == ('select 1 limit 0, 1', []), execution
 
 
+def test_indexing_past_end_raises_indexerror():
+    connection.connection = FakeConnection(())
+    assert_raises(IndexError, lambda: Select(Sql('1'))[10])
+    execution = connection.connection.cursors[0].executions[0]
+    assert execution == ('select 1 limit 10, 1', []), execution
+
+
 def test_slicing():
     result = Select(Sql('1'))[5:10]
     assert isinstance(result, Select), result
     assert result.slice == slice(5, 10), result.slice
     assert result.sql() == 'select 1 limit 5, 5', result.sql()
     assert result.args() == [], result.args()
+
+
+def test_delete():
+    connection.connection = FakeConnection()
+    Select(sources=Sql('1')).delete()
+    execution = connection.connection.cursors[0].executions[0]
+    assert execution == ('delete from 1', []), execution
+
+
+def test_delete_without_sources_raises_typeerror():
+    assert_raises(TypeError, Select(Sql(1)).delete)

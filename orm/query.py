@@ -293,6 +293,8 @@ class Select(Expr):
         return Select(self.what, self.sources, self.where, order, self.slice)
 
     def delete(self):
+        if self.sources is None:
+            raise TypeError("can't delete without sources")
         d = Delete(self.sources, self.where, self.order, self.slice)
         connection.cursor().execute(d.sql(), d.args())
 

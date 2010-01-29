@@ -36,3 +36,6 @@ def test_delete():
         yield the_test
     test_delete.__name__ = 'test_delete'
 
+
+def test_delete_from_multiple_sources_raises_typeerror():
+    assert_raises(TypeError, Delete, ExprList([Sql('1'), Sql('2')]))
